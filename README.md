@@ -13,22 +13,25 @@ aiops-assistant/
 │       ├── java/com/aiops/assistant/
 │       │   ├── AiopsAssistantApplication.java
 │       │   ├── common/        # 通用类型（Result 等）
-│       │   ├── config/        # Web / CORS / Redis / JPA
+│       │   ├── config/        # Web / CORS
 │       │   ├── controller/    # REST API
 │       │   ├── service/       # 业务逻辑
-│       │   ├── entity/        # JPA 实体
-│       │   └── repository/    # Spring Data JPA
+│       │   ├── entity/        # JPA 实体（待建）
+│       │   └── repository/    # Spring Data JPA（待建）
 │       └── resources/
-│           ├── application.yml
-│           └── sql/schema.sql
+│           ├── application.yml            # 公共配置 + 默认 profile=local
+│           ├── application-local.yml      # 本地开发：全部 127.0.0.1
+│           ├── application-docker.yml     # 容器内运行：Compose 服务名
+│           └── sql/schema.sql             # 8 张核心表 DDL
 ├── aiops-web/             # Vue 3 + Vite 前端（待开发）
 ├── aiops-mcp/             # Python MCP Server（待开发）
-├── docker-data/           # Docker Compose 数据卷（已在 .gitignore）
+├── docker-data/           # Docker Compose 数据卷（已 gitignore）
 ├── deploy/                # 部署相关
-├── docs/                  # 设计文档
+├── docs/                  # 设计文档（含 database-review.md）
 ├── sql/                   # 额外 SQL 脚本
 ├── test-data/             # 测试数据
-├── docker-compose.yml     # MySQL / Redis / RabbitMQ
+├── docker-compose.yml     # 仅 Redis / RabbitMQ（MySQL 不由 Compose 管理）
+├── .env.example           # Compose 环境变量示例（无真实密码）
 └── .gitignore
 ```
 
@@ -37,162 +40,194 @@ aiops-assistant/
 | 组件 | 版本 | 说明 |
 |---|---|---|
 | 后端 | Spring Boot 2.7.18 | Java 8，JPA（ddl-auto=validate）+ Redis + AMQP + Actuator |
-| 数据库 | MySQL 8.0.26 | utf8mb4，应用账户 aiops，root 仅用于容器初始化 |
-| 缓存 | Redis 7.2 | AOF 持久化，仅绑定 127.0.0.1 |
-| 消息队列 | RabbitMQ 3.13 | 带 management 插件，独立 aiops 用户，仅绑定 127.0.0.1 |
+| 数据库 | MySQL 8.0.26 | **本机安装，不由 Docker Compose 管理**；utf8mb4，应用账户 aiops |
+| 缓存 | Redis 7.2 | Docker 运行，AOF 持久化，仅绑定 127.0.0.1 |
+| 消息队列 | RabbitMQ 3.13 | Docker 运行，management 插件，独立 aiops 用户，仅绑定 127.0.0.1 |
 | 向量库 | Qdrant | 后续通过 Docker 启用 |
 | LLM | 阿里云百炼 DashScope | OpenAI 兼容 API |
 | 前端 | Vue 3 + Vite | 待开发 |
 | MCP | Python 3.14 + mcp 2.3.0 | 待开发 |
 
-## 快速开始
+## 本地开发启动步骤
 
-### 1. 启动中间件（Docker Compose）
+### 1. 准备本地 MySQL
 
-要求：Docker Desktop 已运行、WSL2 已启用。
+MySQL 使用本机已安装的实例（`127.0.0.1:3306`），Compose 不接管。首次需要建库、建应用账户、导入表结构：
 
 ```powershell
-# 在项目根目录
-docker compose up -d
+# 以本机 MySQL 管理员账号登录
+mysql -u root -p
 
-# 查看状态
-docker compose ps
+-- 建库
+CREATE DATABASE IF NOT EXISTS aiops_assistant
+  DEFAULT CHARACTER SET utf8mb4
+  DEFAULT COLLATE utf8mb4_unicode_ci;
 
-# 查看日志
-docker compose logs -f mysql
+-- 建应用账户（密码自行设定，不要使用弱口令，也不要提交到 Git）
+CREATE USER IF NOT EXISTS 'aiops'@'%' IDENTIFIED BY '<你的密码>';
+GRANT ALL PRIVILEGES ON aiops_assistant.* TO 'aiops'@'%';
+FLUSH PRIVILEGES;
 ```
 
-首次启动 MySQL 会自动：
-- 创建库 `aiops_assistant`
-- 执行 `aiops-server/src/main/resources/sql/schema.sql` 初始化 8 张核心表
+导入 8 张核心表：
 
-### 2. 配置阿里云百炼 API Key
-
-**方式 A — 设置系统环境变量（推荐）**
 ```powershell
-# PowerShell（当前会话）
+cd G:\projects\code\aiops-assistant
+mysql -u aiops -p aiops_assistant < aiops-server/src/main/resources/sql/schema.sql
+
+# 校验
+mysql -u aiops -p -e "USE aiops_assistant; SHOW TABLES;"
+```
+
+> 脚本使用 `CREATE TABLE IF NOT EXISTS`，可重复执行；`ddl-auto=validate` 只校验结构，不会自动改表或删表。
+
+### 2. 启动 Docker 中间件（Redis / RabbitMQ）
+
+要求：Docker Desktop 已运行、WSL2 已启用。密码必须通过环境变量提供，仓库内没有默认弱口令。
+
+```powershell
+cd G:\projects\code\aiops-assistant
+
+# 方式 A：使用 .env（推荐，一次性配置）
+Copy-Item .env.example .env      # 然后编辑 .env 填写 RABBITMQ_PASSWORD
+docker compose up -d
+
+# 方式 B：当前会话注入
+$env:RABBITMQ_PASSWORD = "<你的MQ密码>"
+docker compose up -d
+
+# 查看状态与日志
+docker compose ps
+docker compose logs -f rabbitmq
+```
+
+- Redis：`127.0.0.1:6379`，无密码，数据在 `./docker-data/redis`
+- RabbitMQ：`127.0.0.1:5672`（AMQP）、`127.0.0.1:15672`（管理台），用户 `aiops`，数据在 `./docker-data/rabbitmq`
+
+### 3. 配置应用环境变量
+
+应用不会读取 `.env`，本地启动前需在 shell 中注入（密码不落盘）：
+
+```powershell
+$env:MYSQL_PASSWORD   = "<你的MySQL密码>"
+$env:RABBITMQ_PASSWORD = "<你的MQ密码>"
+# 可选：阿里云百炼
 $env:DASHSCOPE_API_KEY = "sk-xxxxxxxxxxxxxxxx"
 $env:DASHSCOPE_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 $env:DASHSCOPE_MODEL = "qwen-plus"
-
-# 或持久化到用户环境变量
-[Environment]::SetEnvironmentVariable("DASHSCOPE_API_KEY", "sk-xxx", "User")
 ```
 
-**方式 B — 命令行注入**
+> ⚠️ **禁止**把密码 / API Key 写入任何源码或配置文件。所有配置项均为 `${VAR:默认值}` 占位符，未设置时为空值。
+
+### 4. 启动后端（默认 local Profile）
+
 ```powershell
-mvn spring-boot:run "-Dspring-boot.run.jvmArguments=-DDASHSCOPE_API_KEY=sk-xxx"
-```
-
-> ⚠️ **禁止**把 API Key 写入任何源码文件或 `application.yml`；`application.yml` 中已用 `${DASHSCOPE_API_KEY:}` 占位符，环境变量为空时对应功能自动降级。
-
-### 3. 启动后端
-
-**方式 A — Maven 运行**
-```powershell
-cd aiops-server
+cd G:\projects\code\aiops-assistant\aiops-server
 mvn spring-boot:run
 ```
 
-**方式 B — 打包后运行**
+打包运行：
+
 ```powershell
-cd aiops-server
 mvn clean package -DskipTests
-java -jar target/aiops-server.jar
+java -jar target\aiops-server.jar
 ```
 
-**方式 C — 走本地 MySQL（跳过 Docker 中间件）**
-
-编辑 `aiops-server/src/main/resources/application.yml`，把 `spring.datasource.url` 等三条 Docker 默认配置**注释掉**，启用下面注释块里的 `localhost` 配置。Redis / RabbitMQ 同理。
-
-### 4. 健康检查
+### 5. 健康检查
 
 ```powershell
-# PowerShell
-Invoke-RestMethod -Uri "http://127.0.0.1:8080/api/health" | ConvertTo-Json
+curl.exe http://127.0.0.1:8080/api/health
+# {"code":200,"message":"OK","data":{"status":"UP","service":"aiops-server","time":"..."}}
 
-# 或浏览器访问
-# http://127.0.0.1:8080/api/health
-# http://127.0.0.1:8080/actuator/health
+curl.exe http://127.0.0.1:8080/actuator/health
+# 仅返回 {"status":"UP"}，不包含详情与环境信息
 ```
 
-### 5. 推送到 GitHub
+## Profile 切换说明
+
+| Profile | 适用场景 | MySQL | Redis / RabbitMQ |
+|---|---|---|---|
+| `local`（默认） | Windows 本机 `mvn spring-boot:run` | `127.0.0.1:3306` | `127.0.0.1:6379` / `127.0.0.1:5672` |
+| `docker` | 后端自身也运行在容器内 | `host.docker.internal:3306`（访问宿主机 MySQL） | `redis:6379` / `rabbitmq:5672`（Compose 服务名） |
+
+切换方式：
 
 ```powershell
-# 首次推送（仓库已初始化）
-git status
-git add -A
-git commit -m "feat: init backend skeleton /w docker-compose and 8 core tables"
-git push origin main
+# 方式 A：环境变量
+$env:SPRING_PROFILES_ACTIVE = "docker"
+java -jar target\aiops-server.jar
+
+# 方式 B：启动参数
+mvn spring-boot:run "-Dspring-boot.run.profiles=docker"
+# 或
+java -jar target\aiops-server.jar --spring.profiles.active=docker
 ```
+
+所有 profile 的 host / port / 账号 / 密码都可用环境变量覆盖（见下表）。
 
 ## 可用端口
 
-| 服务 | 端口 | 绑定 | 账号/密码（Docker 默认值） |
+| 服务 | 端口 | 绑定 | 管理方式 |
 |---|---|---|---|
-| aiops-server | 8080 | 0.0.0.0 | 无（HTTP） |
-| MySQL | 3306 | 0.0.0.0 | 应用：aiops / aiops_pwd；root 仅容器内 |
-| Redis | 6379 | 127.0.0.1 | 无密码 |
-| RabbitMQ | 5672 | 127.0.0.1 | aiops / aiops_pwd |
-| RabbitMQ 管理 | 15672 | 127.0.0.1 | aiops / aiops_pwd |
+| aiops-server | 8080 | 0.0.0.0 | 本机进程 |
+| MySQL | 3306 | 0.0.0.0 | **本机安装，非 Compose** |
+| Redis | 6379 | 127.0.0.1 | Compose |
+| RabbitMQ AMQP | 5672 | 127.0.0.1 | Compose |
+| RabbitMQ 管理台 | 15672 | 127.0.0.1 | Compose |
 
 ## 环境变量
 
-所有敏感配置通过环境变量注入，`application.yml` 使用 `${VAR:默认值}` 占位符。
+| 变量 | local 默认 | docker 默认 | 说明 |
+|---|---|---|---|
+| `SPRING_PROFILES_ACTIVE` | local | docker（需显式指定） | 激活的 profile |
+| `MYSQL_HOST` | 127.0.0.1 | host.docker.internal | MySQL 主机 |
+| `MYSQL_PORT` | 3306 | 3306 | MySQL 端口 |
+| `MYSQL_DB` | aiops_assistant | aiops_assistant | 数据库名 |
+| `MYSQL_USER` | aiops | aiops | 应用账户 |
+| `MYSQL_PASSWORD` | （空，必填） | （空，必填） | 应用账户密码 |
+| `REDIS_HOST` | 127.0.0.1 | redis | Redis 主机 |
+| `REDIS_PORT` | 6379 | 6379 | Redis 端口 |
+| `REDIS_PASSWORD` | （空） | （空） | Redis 密码，未启用认证时留空 |
+| `RABBITMQ_HOST` | 127.0.0.1 | rabbitmq | RabbitMQ 主机 |
+| `RABBITMQ_PORT` | 5672 | 5672 | AMQP 端口 |
+| `RABBITMQ_USER` | aiops | aiops | RabbitMQ 用户 |
+| `RABBITMQ_PASSWORD` | （空，必填） | （空，必填） | RabbitMQ 密码；Compose 侧同样必填 |
+| `DASHSCOPE_API_KEY` | （空） | （空） | 阿里云百炼 API Key |
+| `DASHSCOPE_BASE_URL` | DashScope 兼容端点 | 同左 | OpenAI 兼容 API Base URL |
+| `DASHSCOPE_MODEL` | qwen-plus | qwen-plus | 默认模型 |
 
-| 变量 | 默认值 | 说明 |
-|---|---|---|
-| `MYSQL_HOST` | mysql | MySQL 主机（Docker 服务名） |
-| `MYSQL_PORT` | 3306 | MySQL 端口 |
-| `MYSQL_DB` | aiops_assistant | 数据库名 |
-| `MYSQL_USER` | aiops | 应用运行账户 |
-| `MYSQL_PASSWORD` | （空） | 应用账户密码，**必须显式设置** |
-| `MYSQL_ROOT_PASSWORD` | root_pwd | root 密码，仅容器初始化时用 |
-| `REDIS_HOST` | redis | Redis 主机 |
-| `REDIS_PORT` | 6379 | Redis 端口 |
-| `RABBITMQ_HOST` | rabbitmq | RabbitMQ 主机 |
-| `RABBITMQ_PORT` | 5672 | RabbitMQ AMQP 端口 |
-| `RABBITMQ_USER` | aiops | RabbitMQ 用户 |
-| `RABBITMQ_PASSWORD` | aiops_pwd | RabbitMQ 密码 |
-| `DASHSCOPE_API_KEY` | （空） | 阿里云百炼 API Key |
-| `DASHSCOPE_BASE_URL` | https://dashscope.aliyuncs.com/compatible-mode/v1 | OpenAI 兼容端点 |
-| `DASHSCOPE_MODEL` | qwen-plus | 默认模型 |
+Compose 侧变量（写入 `.env` 或当前 shell）：
 
-快速设置（PowerShell 当前会话）：
-```powershell
-$env:MYSQL_PASSWORD = "aiops_pwd"            # 与 docker-compose.yml 保持一致
-$env:MYSQL_ROOT_PASSWORD = "root_pwd"
-$env:RABBITMQ_PASSWORD = "aiops_pwd"
-$env:DASHSCOPE_API_KEY = "sk-xxxxxxxxxxxxxxxx"
-```
+| 变量 | 说明 |
+|---|---|
+| `RABBITMQ_USER` | RabbitMQ 用户，默认 aiops |
+| `RABBITMQ_PASSWORD` | **必填**，缺失时 `docker compose up` 直接报错 |
 
 ## 数据库
 
-```sql
-USE aiops_assistant;
-SHOW TABLES;
-```
+核心表：`users`、`alerts`、`metrics`、`logs`、`tickets`、`knowledge_bases`、`models`、`tasks`。
 
-核心表：`users`, `alerts`, `metrics`, `logs`, `tickets`, `knowledge_bases`, `models`, `tasks`。
+设计不足与后续演进（`knowledge_chunks` / `incident` / `ai_session`）见 [docs/database-review.md](docs/database-review.md)。
+
+> 禁止使用 `docker compose down -v` 清理数据；MySQL 数据在本机实例中，与 Compose 无关。
 
 ## 开发规范
 
 - Java 版本固定 **1.8**，不升级。
-- 编码统一 **UTF-8**（`pom.xml` / `application.yml` / MySQL / JSON）。
-- API Key、Token、密码**一律环境变量管理**，禁止硬编码。
-- 中间件优先走 Docker，必要时切换本地 localhost 需显式注释/启用配置块。
-- 新增依赖前先查 BOM 是否已管理版本（Spring Boot 2.7.18 BOM 里已含 mysql-connector-j 8.0.33，不要用旧坐标 `mysql:mysql-connector-java`）。
-- JPA 使用 `spring-boot-starter-data-jpa`，仓库层用 **`repository`** 包（Spring Data JPA），不引入 MyBatis / MyBatis-Plus。
-- Hibernate `ddl-auto=validate` — 启动时只校验 schema，不自动修改/删除已有表。DDL 通过 `schema.sql` + Docker 初始化脚本**明确可控**地执行。
-- **不要用 root 账户作为应用运行账户**。MySQL root 仅用于容器初始化，应用通过独立 `aiops` 账户连接。
-- **不要用 RabbitMQ 默认 guest 用户**。Docker Compose 已创建独立 `aiops` 用户。
-- Redis / RabbitMQ 端口仅绑定 `127.0.0.1`（容器内网络仍互通），避免暴露到局域网。
-- `/api/health` 只检查 Java 应用自身存活，不混入中间件连接状态。中间件健康通过 Actuator 单独端点按需启用。
+- 编码统一 **UTF-8**（`pom.xml` / `application*.yml` / MySQL / JSON）。
+- 密码、API Key、Token **一律环境变量管理**，配置文件只允许 `${VAR:默认值}` 空占位符。
+- MySQL 使用本机实例，不纳入 Compose；Redis / RabbitMQ 由 Compose 管理且只绑定 `127.0.0.1`。
+- 依赖版本由 Spring Boot 2.7.18 BOM 管理；MySQL 驱动坐标用 `com.mysql:mysql-connector-j`。
+- JPA 仓库层使用 **`repository`** 包（Spring Data JPA），不引入 MyBatis / MyBatis-Plus。
+- `ddl-auto=validate`：启动只校验结构，不自动改表 / 删表；结构变更走 `schema.sql` + 手工执行。
+- Actuator 只暴露 `health`、`info`，`show-details=never`；不得为展示健康状态而打开 `env` 等端点。
+- `/api/health` 只反映应用自身存活，不混入中间件连接状态。
 
 ## 下一阶段
 
 - [x] 阶段 1 — 环境检查与骨架
 - [x] 阶段 2 — 后端骨架 + 中间件编排 + 核心 DDL
+- [x] 阶段 2.5 — 配置修复：Profile 拆分、Compose 精简、Actuator 收敛
 - [ ] 阶段 3 — 用户/认证 + 基础 CRUD（users/alerts/tickets）
 - [ ] 阶段 4 — AI 集成：阿里云百炼 + 知识库检索
 - [ ] 阶段 5 — Vue 3 前端骨架 + 页面

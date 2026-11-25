@@ -1,0 +1,27 @@
+# =====================================================================
+# docker profile —— 后端自身也在容器内运行
+#
+# 启用方式：SPRING_PROFILES_ACTIVE=docker
+# Redis / RabbitMQ 使用 Compose 网络服务名（redis / rabbitmq）。
+# MySQL 不在 Compose 中管理，容器内需通过 host.docker.internal 访问宿主机上的本地 MySQL。
+# 凭据只从环境变量读取，本文件不含任何密码。
+# =====================================================================
+
+spring:
+  datasource:
+    url: jdbc:mysql://${MYSQL_HOST:host.docker.internal}:${MYSQL_PORT:3306}/${MYSQL_DB:aiops_assistant}?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+    username: ${MYSQL_USER:aiops}
+    password: ${MYSQL_PASSWORD:}
+
+  redis:
+    host: ${REDIS_HOST:redis}
+    port: ${REDIS_PORT:6379}
+    password: ${REDIS_PASSWORD:}
+    database: ${REDIS_DB:0}
+
+  rabbitmq:
+    host: ${RABBITMQ_HOST:rabbitmq}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USER:aiops}
+    password: ${RABBITMQ_PASSWORD:}
+    virtual-host: ${RABBITMQ_VHOST:/}
