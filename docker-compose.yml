@@ -1,0 +1,107 @@
+# =====================================================================
+# AI DevOps Assistant - Docker Compose
+# 中间件编排：MySQL 8 / Redis 7 / RabbitMQ 3 (management)
+#
+# 启动：docker compose up -d
+# 停止：docker compose down          （保留数据）
+# 销毁：docker compose down -v       （连同数据卷一起清空）
+# =====================================================================
+
+name: aiops-assistant
+
+services:
+  # ---------- MySQL 8 ----------
+  mysql:
+    image: mysql:8.0.26
+    container_name: aiops-mysql
+    restart: unless-stopped
+    environment:
+      # root 仅用于容器初始化，应用运行账户为 aiops
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root_pwd}
+      MYSQL_DATABASE: aiops_assistant
+      MYSQL_USER: ${MYSQL_USER:-aiops}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-aiops_pwd}
+      TZ: Asia/Shanghai
+      LANG: en_US.UTF-8
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --default-authentication-plugin=mysql_native_password
+      - --max-connections=500
+      - --innodb-buffer-pool-size=256M
+      - --log-bin=mysql-bin
+      - --binlog-format=ROW
+      - --server-id=1
+    ports:
+      - "3306:3306"
+    volumes:
+      - ./docker-data/mysql:/var/lib/mysql
+      - ./aiops-server/src/main/resources/sql/schema.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-p${MYSQL_ROOT_PASSWORD:-root_pwd}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    networks:
+      - aiops-net
+
+  # ---------- Redis 7 ----------
+  redis:
+    image: redis:7.2-alpine
+    container_name: aiops-redis
+    restart: unless-stopped
+    environment:
+      TZ: Asia/Shanghai
+    command:
+      - redis-server
+      - --appendonly yes
+      - --save 900 1
+      - --save 300 10
+      - --save 60 10000
+      - --maxmemory 256mb
+      - --maxmemory-policy allkeys-lru
+    # 端口仅绑定本机 127.0.0.1，容器内网络仍可互通
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - ./docker-data/redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    mem_limit: 512m
+    networks:
+      - aiops-net
+
+  # ---------- RabbitMQ 3 (management) ----------
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    container_name: aiops-rabbitmq
+    restart: unless-stopped
+    environment:
+      # 独立 aiops 用户，不使用默认 guest
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-aiops}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-aiops_pwd}
+      TZ: Asia/Shanghai
+    # 端口仅绑定本机 127.0.0.1，容器内网络仍可互通
+    ports:
+      - "127.0.0.1:5672:5672"
+      - "127.0.0.1:15672:15672"
+    volumes:
+      - ./docker-data/rabbitmq:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 45s
+    mem_limit: 768m
+    networks:
+      - aiops-net
+
+networks:
+  aiops-net:
+    name: aiops-net
+    driver: bridge

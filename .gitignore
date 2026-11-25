@@ -1,3 +1,4 @@
+# ---- Java / Maven ----
 target/
 *.class
 *.jar
@@ -6,15 +7,47 @@ target/
 .idea/
 *.iws
 *.ipr
+*.log
+
+# ---- IDE ----
 .vscode/
+*.swp
+*.swo
+
+# ---- Node ----
 node_modules/
 dist/
 build/
+
+# ---- Python ----
 __pycache__/
 *.pyc
 .venv/
 venv/
-.env
+
+# ---- Docker / 本地数据卷 ----
+docker-data/
 deploy/docker-data/
 docker-desktop-data/
-*.log
+
+# ---- 环境与敏感文件 ----
+.env
+.env.local
+.env.*.local
+token.txt
+tokens/
+*.key
+*.pem
+*.p12
+
+# ---- 系统 ----
+.DS_Store
+Thumbs.db
+ehthumbs.db
+
+# ---- 临时与日志 ----
+logs/
+*.dump
+*.sql.bak
+tmp/
+temp/

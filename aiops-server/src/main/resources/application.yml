@@ -1,0 +1,118 @@
+server:
+  port: 8080
+  servlet:
+    context-path: /
+  compression:
+    enabled: true
+    mime-types: text/html,text/xml,text/plain,text/css,text/javascript,application/javascript,application/json,application/xml
+
+spring:
+  application:
+    name: aiops-server
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:default}
+  jackson:
+    date-format: yyyy-MM-dd HH:mm:ss
+    time-zone: GMT+8
+    serialization:
+      write-dates-as-timestamps: false
+
+  datasource:
+    # ---------- Docker Compose 默认（服务名 mysql）—— 提交态默认启用 ----------
+    url: jdbc:mysql://${MYSQL_HOST:mysql}:${MYSQL_PORT:3306}/${MYSQL_DB:aiops_assistant}?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+    username: ${MYSQL_USER:aiops}
+    password: ${MYSQL_PASSWORD:}
+    # ---------- 本地调试（127.0.0.1）—— 本地跑 mvn spring-boot:run 时取消注释下面三行，并注释上面三行 ----------
+    # url: jdbc:mysql://127.0.0.1:3306/aiops_assistant?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+    # username: ${MYSQL_USER:aiops}
+    # password: ${MYSQL_PASSWORD:}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.MySQL8Dialect
+        format_sql: true
+    open-in-view: false
+
+  redis:
+    # ---------- Docker Compose 默认（服务名 redis）—— 提交态默认启用 ----------
+    host: ${REDIS_HOST:redis}
+    port: ${REDIS_PORT:6379}
+    password: ${REDIS_PASSWORD:}
+    database: ${REDIS_DB:0}
+    # ---------- 本地调试（127.0.0.1）—— 本地运行时取消注释下面四行，并注释上面四行 ----------
+    # host: 127.0.0.1
+    # port: 6379
+    # password: ${REDIS_PASSWORD:}
+    # database: 0
+    timeout: 5000ms
+    lettuce:
+      pool:
+        max-active: 16
+        max-idle: 8
+        min-idle: 2
+        max-wait: 3000ms
+
+  rabbitmq:
+    # ---------- Docker Compose 默认（服务名 rabbitmq）—— 提交态默认启用 ----------
+    host: ${RABBITMQ_HOST:rabbitmq}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USER:aiops}
+    password: ${RABBITMQ_PASSWORD:}
+    virtual-host: ${RABBITMQ_VHOST:/}
+    # ---------- 本地调试（127.0.0.1）—— 本地运行时取消注释下面五行，并注释上面五行 ----------
+    # host: 127.0.0.1
+    # port: 5672
+    # username: ${RABBITMQ_USER:aiops}
+    # password: ${RABBITMQ_PASSWORD:}
+    # virtual-host: /
+    connection-timeout: 5000ms
+    publisher-confirm-type: correlated
+    publisher-returns: true
+    listener:
+      simple:
+        acknowledge-mode: manual
+        prefetch: 10
+        concurrency: 2
+        max-concurrency: 8
+
+# Actuator — 默认只暴露应用自身健康，不把中间件连接状态混入基础存活接口
+management:
+  server:
+    port: 8080
+  endpoints:
+    web:
+      exposure:
+        include: health,info,env,metrics
+      base-path: /actuator
+  endpoint:
+    health:
+      show-details: always
+  health:
+    redis:
+      enabled: false          # 中间件连接检查通过单独端点暴露，不混入基础 health
+    db:
+      enabled: false
+
+logging:
+  level:
+    root: INFO
+    com.aiops.assistant: DEBUG
+    org.hibernate.SQL: WARN
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"
+    file: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"
+  file:
+    name: logs/aiops-server.log
+
+# App
+aiops:
+  llm:
+    # 阿里云百炼（OpenAI 兼容 API）
+    api-key: ${DASHSCOPE_API_KEY:}
+    base-url: ${DASHSCOPE_BASE_URL:https://dashscope.aliyuncs.com/compatible-mode/v1}
+    model: ${DASHSCOPE_MODEL:qwen-plus}
