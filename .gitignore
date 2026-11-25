@@ -13,6 +13,7 @@ target/
 .vscode/
 *.swp
 *.swo
+*.code-workspace
 
 # ---- Node ----
 node_modules/
