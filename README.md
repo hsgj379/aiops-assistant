@@ -111,10 +111,17 @@ docker compose logs -f rabbitmq
 ```powershell
 $env:MYSQL_PASSWORD   = "<你的MySQL密码>"
 $env:RABBITMQ_PASSWORD = "<你的MQ密码>"
-# 可选：阿里云百炼
-$env:DASHSCOPE_API_KEY = "sk-xxxxxxxxxxxxxxxx"
-$env:DASHSCOPE_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
-$env:DASHSCOPE_MODEL = "qwen-plus"
+# JWT 签名密钥（Base64，至少 32 字节；未设置时应用启动即失败）
+$bytes = New-Object byte[] 32
+[System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
+$env:JWT_SECRET = [Convert]::ToBase64String($bytes)
+# 可选：阿里云百炼（留空时应用正常启动，/api/ai/** 返回 503 服务未配置）
+$env:AI_API_KEY = "sk-xxxxxxxxxxxxxxxx"
+$env:AI_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+$env:AI_MODEL = "qwen-plus"
+$env:AI_CONNECT_TIMEOUT = "5000"      # 连接超时（毫秒）
+$env:AI_READ_TIMEOUT = "60000"        # 读取超时（毫秒）
+$env:AI_MAX_OUTPUT_TOKENS = "1500"    # 单次最大输出 Token
 ```
 
 > ⚠️ **禁止**把密码 / API Key 写入任何源码或配置文件。所有配置项均为 `${VAR:默认值}` 占位符，未设置时为空值。
@@ -192,9 +199,14 @@ java -jar target\aiops-server.jar --spring.profiles.active=docker
 | `RABBITMQ_PORT` | 5672 | 5672 | AMQP 端口 |
 | `RABBITMQ_USER` | aiops | aiops | RabbitMQ 用户 |
 | `RABBITMQ_PASSWORD` | （空，必填） | （空，必填） | RabbitMQ 密码；Compose 侧同样必填 |
-| `DASHSCOPE_API_KEY` | （空） | （空） | 阿里云百炼 API Key |
-| `DASHSCOPE_BASE_URL` | DashScope 兼容端点 | 同左 | OpenAI 兼容 API Base URL |
-| `DASHSCOPE_MODEL` | qwen-plus | qwen-plus | 默认模型 |
+| `JWT_SECRET` | （空，必填） | （空，必填） | JWT HS256 签名密钥，Base64 编码且解码后 ≥32 字节；缺失时启动失败 |
+| `JWT_EXPIRE_HOURS` | 24 | 24 | Token 有效期（小时） |
+| `AI_BASE_URL` | DashScope 兼容端点 | 同左 | OpenAI 兼容 API Base URL |
+| `AI_API_KEY` | （空） | （空） | 百炼 API Key；缺失时 AI 接口返回 503，应用仍可启动 |
+| `AI_MODEL` | qwen-plus | qwen-plus | 默认模型，可换成任意兼容模型 |
+| `AI_CONNECT_TIMEOUT` | 5000 | 5000 | 连接超时（毫秒） |
+| `AI_READ_TIMEOUT` | 60000 | 60000 | 读取超时（毫秒） |
+| `AI_MAX_OUTPUT_TOKENS` | 1500 | 1500 | 单次请求最大输出 Token |
 
 Compose 侧变量（写入 `.env` 或当前 shell）：
 

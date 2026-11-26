@@ -83,8 +83,16 @@ logging:
 
 # App
 aiops:
-  llm:
-    # 阿里云百炼（OpenAI 兼容 API）
-    api-key: ${DASHSCOPE_API_KEY:}
-    base-url: ${DASHSCOPE_BASE_URL:https://dashscope.aliyuncs.com/compatible-mode/v1}
-    model: ${DASHSCOPE_MODEL:qwen-plus}
+  security:
+    jwt:
+      # Base64 编码的 256-bit 以上密钥，必须通过环境变量注入；为空时应用启动即失败
+      secret: ${JWT_SECRET:}
+      expire-hours: ${JWT_EXPIRE_HOURS:24}
+  ai:
+    # 阿里云百炼（OpenAI 兼容 API）；全部可用环境变量覆盖，缺失 API Key 时应用仍可启动，AI 接口返回 503
+    base-url: ${AI_BASE_URL:https://dashscope.aliyuncs.com/compatible-mode/v1}
+    api-key: ${AI_API_KEY:}
+    model: ${AI_MODEL:qwen-plus}
+    connect-timeout: ${AI_CONNECT_TIMEOUT:5000}
+    read-timeout: ${AI_READ_TIMEOUT:60000}
+    max-output-tokens: ${AI_MAX_OUTPUT_TOKENS:1500}
