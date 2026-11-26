@@ -12,12 +12,13 @@ aiops-assistant/
 │   └── src/main/
 │       ├── java/com/aiops/assistant/
 │       │   ├── AiopsAssistantApplication.java
-│       │   ├── common/        # 通用类型（Result 等）
-│       │   ├── config/        # Web / CORS
-│       │   ├── controller/    # REST API
-│       │   ├── service/       # 业务逻辑
-│       │   ├── entity/        # JPA 实体（待建）
-│       │   └── repository/    # Spring Data JPA（待建）
+│       │   ├── common/        # Result、全局异常与 AI 异常
+│       │   ├── config/        # Web/CORS、Security(JWT)、AI(RestTemplate)
+│       │   ├── controller/    # Health / Auth / Ai
+│       │   ├── dto/           # 请求与响应 DTO
+│       │   ├── entity/        # JPA 实体（User）
+│       │   ├── repository/    # Spring Data JPA（UserRepository）
+│       │   └── service/       # 业务逻辑（含 impl/）
 │       └── resources/
 │           ├── application.yml            # 公共配置 + 默认 profile=local
 │           ├── application-local.yml      # 本地开发：全部 127.0.0.1
@@ -240,8 +241,8 @@ Compose 侧变量（写入 `.env` 或当前 shell）：
 - [x] 阶段 1 — 环境检查与骨架
 - [x] 阶段 2 — 后端骨架 + 中间件编排 + 核心 DDL
 - [x] 阶段 2.5 — 配置修复：Profile 拆分、Compose 精简、Actuator 收敛
-- [ ] 阶段 3 — 用户/认证 + 基础 CRUD（users/alerts/tickets）
-- [ ] 阶段 4 — AI 集成：阿里云百炼 + 知识库检索
+- [x] 阶段 3 — 用户注册 / 登录 / JWT 身份认证（真实 MySQL 验证通过）
+- [x] 阶段 4 — 阿里云百炼接入：AI 运维问答 + 结构化故障诊断（真实 qwen-plus 调用已验证）
 - [ ] 阶段 5 — Vue 3 前端骨架 + 页面
 - [ ] 阶段 6 — Python MCP Server
 - [ ] 阶段 7 — Docker 化后端 + 全链路 Compose + CI/CD
